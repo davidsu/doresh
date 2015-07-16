@@ -1,10 +1,30 @@
 var doresh = (function(){
     var executionDrishot = {};
+    var isCodeFileLoaded = {};
+    var EMPTY_STRING = '                                  ';
+    var MAX_FAILS_MAKING_PROGRESS = 20;
+
+    function UnableToResolveDependeciesError(message){
+        this.name = "UnableToResolveDependeciesError";
+        this.message = (message || "");
+    }
+
+    UnableToResolveDependeciesError.prototype = Error.prototype;
 
     function printExecutionDrishot(){
         var result = '';
         for(var v in executionDrishot){
             result+= executionDrishot[v].toString()+'\n';
+        }
+        return result;
+    }
+
+    function printUnresolvedDrishot(){
+        var result = '';
+        for(var v in executionDrishot){
+            if(!executionDrishot[v].initialized) {
+                result += executionDrishot[v].toString() + '\n';
+            }
         }
         return result;
     }
@@ -35,16 +55,17 @@ var doresh = (function(){
         this.returnedValue = undefined;
         this.filePath = filePath;
         this.toString = function(){
-            return filePath + " initialized: " + this.initialized;
+            var filePathLen30 = (filePath  + EMPTY_STRING).substring(0, 30);
+            return filePathLen30 + " initialized: " + this.initialized;
         }.bind(this);
     }
 
-    function tryToMakeProgress(codeFile){
+    function tryToMakeProgress(drishObj){
         var madeProgress = false;
         var depsAreInitialized = true;
 
-        codeFile.dependencies.forEach(function(key){
-            if(!executionDrishot[key]){
+        drishObj.dependencies.forEach(function(key){
+            if(!executionDrishot[key] && !isCodeFileLoaded[key]){
                 loadCodeFile(key);
                 madeProgress = true;
             }
@@ -54,11 +75,11 @@ var doresh = (function(){
         });
 
         if(depsAreInitialized){
-            var parameters = codeFile.dependencies.map(function(key){
+            var parameters = drishObj.dependencies.map(function(key){
                 return executionDrishot[key].returnedValue;
             });
-            codeFile.initialized = true;
-            codeFile.returnedValue = codeFile.execute.apply(null, parameters);
+            drishObj.initialized = true;
+            drishObj.returnedValue = drishObj.execute.apply(null, parameters);
             madeProgress = true;
         }
 
@@ -67,6 +88,7 @@ var doresh = (function(){
     }
 
     function loadCodeFile(filePath){
+        isCodeFileLoaded[filePath] = true;
         var script = document.createElement('script');
         script.src = filePath;
         document.head.appendChild(script);
@@ -97,14 +119,14 @@ var doresh = (function(){
     }
 
     function resolveAsync(sleepTime, noProgressCount, count){
-       // console.log(count++);
+        // console.log(count++);
 
         setTimeout(function verifyResolves() {
             if(resolve()){
                 resolveAsync(0, noProgressCount, count);
             }else if(!isFullyResolved()){
-                if(noProgressCount>20){
-                    throw 'doresh failed';
+                if(noProgressCount>MAX_FAILS_MAKING_PROGRESS){
+                    throw new UnableToResolveDependeciesError('unresolved files:\n' + printUnresolvedDrishot());
                 }
                 noProgressCount++;
                 console.log(noProgressCount);
@@ -125,8 +147,22 @@ var doresh = (function(){
         executionDrishot[filePath] = new DrishObj(drishot, callback, filePath);
     }
 
+    function getAppScriptPath(){
+        var scripts = document.querySelectorAll('script'),
+            doreshScriptElement, dataAppPath;
+        for(var i = 0; i<scripts.length; i++){
+            if(utils.stringEndsWith(scripts[i].getAttribute('src'), 'doresh.js')){
+                doreshScriptElement = scripts[i];
+                break;
+            }
+        }
+        dataAppPath = doreshScriptElement.getAttribute('data-app');
+        return dataAppPath || 'app.js';
+    }
+
     document.addEventListener("DOMContentLoaded", function() {
-        loadCodeFile('app.js');
+        var appScriptPath = getAppScriptPath();
+        loadCodeFile(appScriptPath);
         resolveAsync(20, 0, 0);
     });
     return doresh;
